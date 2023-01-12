@@ -7,11 +7,15 @@ import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
 import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
+import org.springframework.batch.core.job.flow.JobExecutionDecider;
 import org.springframework.batch.repeat.RepeatStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
+
+import com.linkedin.batch.deciders.DeliveryDecider;
+import com.linkedin.batch.deciders.ReceiptDecider;
 
 @SpringBootApplication
 @EnableBatchProcessing
@@ -24,6 +28,48 @@ public class LinkedinBatchApplication {
 
 	@Autowired
 	public StepBuilderFactory stepBuilderFactory;
+	
+	@Bean 
+	public JobExecutionDecider decider() {
+		return new DeliveryDecider();
+	}
+	
+	@Bean
+	public JobExecutionDecider receiptDecider() {
+		return new ReceiptDecider();
+	}
+	
+	@Bean
+	public Step thankCustomerStep() {
+		return this.stepBuilderFactory.get("thankCustomerStep").tasklet((stepContribution, chunkContext) -> {
+			LOG.info("The package is correct, thanking the customer.");
+			return RepeatStatus.FINISHED;
+		}).build();
+	}
+	
+	@Bean
+	public Step refundCustomerStep() {
+		return this.stepBuilderFactory.get("refundCustomerStep").tasklet((stepContribution, chunkContext) -> {
+			LOG.info("There's something wrong with the package, customer asked for refund.");
+			return RepeatStatus.FINISHED;
+		}).build();
+	}
+	
+	@Bean
+	public Step leaveAtDoorStep() {
+		return this.stepBuilderFactory.get("leaveAtDoorStep").tasklet((stepContribution, chunkContext) -> {
+			LOG.info("Leaving the package at the door.");
+			return RepeatStatus.FINISHED;
+		}).build();
+	}
+	
+	@Bean
+	public Step storePackageStep() {
+		return this.stepBuilderFactory.get("storePackageStep").tasklet((stepContribution, chunkContext) -> {
+			LOG.info("Storing the package while the customer address is located.");
+			return RepeatStatus.FINISHED;
+		}).build();
+	}
 
 	@Bean
 	public Step givePackageToCustomerStep() {
@@ -65,7 +111,15 @@ public class LinkedinBatchApplication {
 		return this.jobBuilderFactory.get("deliverPackageJob")
 				.start(packageItemStep())
 				.next(driveToAddressStep())
-				.next(givePackageToCustomerStep())
+					.on("FAILED").to(storePackageStep())
+				.from(driveToAddressStep())
+					.on("*").to(decider())
+						.on("PRESENT").to(givePackageToCustomerStep())
+							.next(receiptDecider()).on("OK").to(thankCustomerStep())
+							.from(receiptDecider()).on("NOT_OK").to(refundCustomerStep())
+					.from(decider())
+						.on("NOT_PRESENT").to(leaveAtDoorStep())
+				.end()
 				.build();
 	}
 
