@@ -15,10 +15,13 @@ import org.springframework.batch.item.database.PagingQueryProvider;
 import org.springframework.batch.item.database.builder.JdbcBatchItemWriterBuilder;
 import org.springframework.batch.item.database.builder.JdbcPagingItemReaderBuilder;
 import org.springframework.batch.item.database.support.SqlPagingQueryProviderFactoryBean;
+import org.springframework.batch.item.json.JacksonJsonObjectMarshaller;
+import org.springframework.batch.item.json.builder.JsonFileItemWriterBuilder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
+import org.springframework.core.io.FileSystemResource;
 
 import com.linkedin.batch.chunk.mappers.OrderRowMapper;
 import com.linkedin.batch.chunk.model.Order;
@@ -112,13 +115,23 @@ public class LinkedinChunkBatchApplication {
 //	}
 	
 	// Chapter 5 EP 3 - JDBC item writer
+//	@Bean
+//	public ItemWriter<Order> itemWriter() {
+//		return new JdbcBatchItemWriterBuilder<Order>()
+//				.dataSource(dataSource)
+//				.sql(INSERT_ORDER_SQL)
+//				.beanMapped()
+//				.build();
+//	}
+	
+	// Chapter 5 Challenge - Write the data to a JSON file
 	@Bean
 	public ItemWriter<Order> itemWriter() {
-		return new JdbcBatchItemWriterBuilder<Order>()
-				.dataSource(dataSource)
-				.sql(INSERT_ORDER_SQL)
-				.beanMapped()
-				.build();
+		return new JsonFileItemWriterBuilder<Order>()
+                .jsonObjectMarshaller(new JacksonJsonObjectMarshaller<Order>())
+                .resource(new FileSystemResource("Z:\\Ambiente\\Projetos\\shipped_orders_output.json"))
+                .name("tradeJsonFileItemWriter")
+                .build();
 	}
 	
 	@Bean
