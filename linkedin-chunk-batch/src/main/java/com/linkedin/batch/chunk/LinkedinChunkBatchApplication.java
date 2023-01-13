@@ -29,6 +29,7 @@ import org.springframework.core.io.FileSystemResource;
 import com.linkedin.batch.chunk.mappers.OrderRowMapper;
 import com.linkedin.batch.chunk.model.Order;
 import com.linkedin.batch.chunk.model.TrackedOrder;
+import com.linkedin.batch.chunk.processors.FreeShippingItemProcessor;
 import com.linkedin.batch.chunk.processors.TrackedOrderItemProcessor;
 import com.linkedin.batch.chunk.repository.OrderItemPreparedStatementSetter;
 
@@ -168,10 +169,18 @@ public class LinkedinChunkBatchApplication {
 	@Bean
 	public ItemProcessor<Order, TrackedOrder> compositeItemProcessor() {
 		return new CompositeItemProcessorBuilder<Order, TrackedOrder>()
-				.delegates(orderValidatingItemProcessor(), trackedOrderItemProcessor())
+				.delegates(orderValidatingItemProcessor(), trackedOrderItemProcessor(), freeShippingItemProcessor())
 				.build();
 	}
-
+	
+	// Chapter 6 Challenge - Create a item processor for free shipping, but the only
+	// items eligible for free shipping are the ones that costs more than $80 and
+	// from government
+	@Bean
+	public ItemProcessor<TrackedOrder, TrackedOrder> freeShippingItemProcessor() {
+		return new FreeShippingItemProcessor();
+	}
+	
 	@Bean
 	public Step chunkBasedStep() throws Exception {
 		return this.stepBuilderFactory.get("chunkBasedStep")
