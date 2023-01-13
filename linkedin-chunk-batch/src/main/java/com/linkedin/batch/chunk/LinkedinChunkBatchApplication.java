@@ -9,6 +9,7 @@ import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
 import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
+import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.database.PagingQueryProvider;
@@ -17,6 +18,8 @@ import org.springframework.batch.item.database.builder.JdbcPagingItemReaderBuild
 import org.springframework.batch.item.database.support.SqlPagingQueryProviderFactoryBean;
 import org.springframework.batch.item.json.JacksonJsonObjectMarshaller;
 import org.springframework.batch.item.json.builder.JsonFileItemWriterBuilder;
+import org.springframework.batch.item.support.builder.CompositeItemProcessorBuilder;
+import org.springframework.batch.item.validator.BeanValidatingItemProcessor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -25,6 +28,8 @@ import org.springframework.core.io.FileSystemResource;
 
 import com.linkedin.batch.chunk.mappers.OrderRowMapper;
 import com.linkedin.batch.chunk.model.Order;
+import com.linkedin.batch.chunk.model.TrackedOrder;
+import com.linkedin.batch.chunk.processors.TrackedOrderItemProcessor;
 import com.linkedin.batch.chunk.repository.OrderItemPreparedStatementSetter;
 
 
@@ -126,11 +131,11 @@ public class LinkedinChunkBatchApplication {
 	
 	// Chapter 5 Challenge - Write the data to a JSON file
 	@Bean
-	public ItemWriter<Order> itemWriter() {
-		return new JsonFileItemWriterBuilder<Order>()
-                .jsonObjectMarshaller(new JacksonJsonObjectMarshaller<Order>())
+	public ItemWriter<TrackedOrder> itemWriter() {
+		return new JsonFileItemWriterBuilder<TrackedOrder>()
+                .jsonObjectMarshaller(new JacksonJsonObjectMarshaller<TrackedOrder>())
                 .resource(new FileSystemResource("Z:\\Ambiente\\Projetos\\shipped_orders_output.json"))
-                .name("tradeJsonFileItemWriter")
+                .name("jsonFileItemWriter")
                 .build();
 	}
 	
@@ -145,16 +150,39 @@ public class LinkedinChunkBatchApplication {
 				.build();
 	}
 	
+	// Chapter 6 EP 2 - Item processor
+	@Bean
+	public ItemProcessor<Order, Order> orderValidatingItemProcessor() {
+		BeanValidatingItemProcessor<Order> itemProcessor = new BeanValidatingItemProcessor<>();
+		itemProcessor.setFilter(true);
+		return itemProcessor;
+	}
+	
+	// Chapter 6 EP 3 - Transforming an item using a processor
+	@Bean
+	public ItemProcessor<Order, TrackedOrder> trackedOrderItemProcessor() {
+		return new TrackedOrderItemProcessor();
+	}
+	
+	// Chapter 6 EP 4 - Creating a chained processor
+	@Bean
+	public ItemProcessor<Order, TrackedOrder> compositeItemProcessor() {
+		return new CompositeItemProcessorBuilder<Order, TrackedOrder>()
+				.delegates(orderValidatingItemProcessor(), trackedOrderItemProcessor())
+				.build();
+	}
 
 	@Bean
 	public Step chunkBasedStep() throws Exception {
 		return this.stepBuilderFactory.get("chunkBasedStep")
-				.<Order,Order>chunk(10)
+				.<Order, TrackedOrder>chunk(10)
 				.reader(itemReader())
+				.processor(compositeItemProcessor())
 				.writer(itemWriter())
 				.build();
 	}
 	
+
 	@Bean
 	public Job job() throws Exception {
 		return this.jobBuilderFactory.get("job")
