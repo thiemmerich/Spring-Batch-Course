@@ -20,7 +20,7 @@ public class OrderRowMapper implements RowMapper<Order> {
 		order.setItemId(resultSet.getString("item_id"));
 		order.setItemName(resultSet.getString("item_name"));
 		order.setShipDate(resultSet.getDate("ship_date"));
-		
+
 		return order;
 	}
 

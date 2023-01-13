@@ -19,7 +19,7 @@ public class OrderFieldSetMapper implements FieldSetMapper<Order> {
 		order.setItemId(fieldSet.readString("item_id"));
 		order.setItemName(fieldSet.readString("item_name"));
 		order.setShipDate(fieldSet.readDate("ship_date"));
-		
+
 		return order;
 	}
 
