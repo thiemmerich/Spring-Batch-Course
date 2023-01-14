@@ -25,7 +25,12 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.task.TaskExecutor;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
+import com.linkedin.batch.chunk.exceptions.OrderProcessingException;
+import com.linkedin.batch.chunk.listeners.CustomRetryListener;
+import com.linkedin.batch.chunk.listeners.CustomSkipListener;
 import com.linkedin.batch.chunk.mappers.OrderRowMapper;
 import com.linkedin.batch.chunk.model.Order;
 import com.linkedin.batch.chunk.model.TrackedOrder;
@@ -46,10 +51,10 @@ public class LinkedinChunkBatchApplication {
 	private static String SQL_FROM = "from SHIPPED_ORDER ";
 	private static String SQL_SORT = "order by order_id";
 	public static String ORDER_SQL = SQL_SELECT + SQL_FROM + SQL_SORT;
-	
+
 	public static String INSERT_ORDER_SQL = "insert into "
-			+ "SHIPPED_ORDER_OUTPUT(order_id, first_name, last_name, email, item_id, item_name, cost, ship_date)"
-			+ " values(:orderId,:firstName,:lastName,:email,:itemId,:itemName,:cost,:shipDate)";
+			+ "TRACKED_ORDER(order_id, first_name, last_name, email, item_id, item_name, cost, ship_date, tracking_number, free_shipping)"
+			+ " values(:orderId,:firstName,:lastName,:email,:itemId,:itemName,:cost,:shipDate,:trackingNumber, :freeShipping)";
 	
 	@Autowired
 	public JobBuilderFactory jobBuilderFactory;
@@ -121,24 +126,24 @@ public class LinkedinChunkBatchApplication {
 //	}
 	
 	// Chapter 5 EP 3 - JDBC item writer
-//	@Bean
-//	public ItemWriter<Order> itemWriter() {
-//		return new JdbcBatchItemWriterBuilder<Order>()
-//				.dataSource(dataSource)
-//				.sql(INSERT_ORDER_SQL)
-//				.beanMapped()
-//				.build();
-//	}
+	@Bean
+	public ItemWriter<Order> itemWriter() {
+		return new JdbcBatchItemWriterBuilder<Order>()
+				.dataSource(dataSource)
+				.sql(INSERT_ORDER_SQL)
+				.beanMapped()
+				.build();
+	}
 	
 	// Chapter 5 Challenge - Write the data to a JSON file
-	@Bean
-	public ItemWriter<TrackedOrder> itemWriter() {
-		return new JsonFileItemWriterBuilder<TrackedOrder>()
-                .jsonObjectMarshaller(new JacksonJsonObjectMarshaller<TrackedOrder>())
-                .resource(new FileSystemResource("Z:\\Ambiente\\Projetos\\shipped_orders_output.json"))
-                .name("jsonFileItemWriter")
-                .build();
-	}
+//	@Bean
+//	public ItemWriter<TrackedOrder> itemWriter() {
+//		return new JsonFileItemWriterBuilder<TrackedOrder>()
+//                .jsonObjectMarshaller(new JacksonJsonObjectMarshaller<TrackedOrder>())
+//                .resource(new FileSystemResource("Z:\\Ambiente\\Projetos\\shipped_orders_output.json"))
+//                .name("jsonFileItemWriter")
+//                .build();
+//	}
 	
 	@Bean
 	public ItemReader<Order> itemReader() throws Exception {
@@ -148,6 +153,7 @@ public class LinkedinChunkBatchApplication {
 				.queryProvider(queryProvider())
 				.rowMapper(new OrderRowMapper())
 				.pageSize(10)
+				.saveState(false)
 				.build();
 	}
 	
@@ -181,13 +187,32 @@ public class LinkedinChunkBatchApplication {
 		return new FreeShippingItemProcessor();
 	}
 	
+	// Chapter 7 EP 5 - Multi threaded steps
+	@Bean
+	public TaskExecutor taskExecutor() {
+		ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+		executor.setCorePoolSize(2);
+		executor.setMaxPoolSize(10);
+		return executor;
+	}
+	
 	@Bean
 	public Step chunkBasedStep() throws Exception {
 		return this.stepBuilderFactory.get("chunkBasedStep")
 				.<Order, TrackedOrder>chunk(10)
 				.reader(itemReader())
 				.processor(compositeItemProcessor())
+				// Chapter 7 EP 2 - Skipping error at processing
+				.faultTolerant()
+				//.skip(OrderProcessingException.class)
+				//.skipLimit(5)
+				// Chapter 7 EP 4 - Retrying process
+				.retry(OrderProcessingException.class) 
+				.retryLimit(3)
+				.listener(new CustomRetryListener())
 				.writer(itemWriter())
+				// Chapter 7 EP 5 - Multi threaded steps
+				.taskExecutor(taskExecutor())
 				.build();
 	}
 	
